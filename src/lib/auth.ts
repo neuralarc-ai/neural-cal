@@ -43,6 +43,13 @@ export const authOptions: NextAuthOptions = {
   ],
   session: { strategy: "jwt" },
   callbacks: {
+    async signIn({ user }) {
+      const allowedEmail = process.env.ADMIN_EMAIL;
+      if (allowedEmail && user.email !== allowedEmail) {
+        return false;
+      }
+      return true;
+    },
     async jwt({ token, account, profile }) {
       // First sign-in — store tokens from Google
       if (account) {
