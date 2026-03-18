@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { createCalendarEvent } from "@/lib/google";
+import { getPublicAuth, getConfig, createBookingEvent } from "@/lib/google";
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
@@ -10,55 +9,55 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
 
-  const eventType = await prisma.eventType.findUnique({
-    where: { id: eventTypeId },
-    include: {
-      user: {
-        include: { accounts: true, availability: true },
-      },
-    },
-  });
-
-  if (!eventType) {
-    return NextResponse.json({ error: "Event type not found" }, { status: 404 });
+  if (!process.env.CEO_GOOGLE_REFRESH_TOKEN) {
+    return NextResponse.json({ error: "Booking service not configured" }, { status: 503 });
   }
 
-  const googleAccount = eventType.user.accounts.find((a) => a.provider === "google");
-  let meetLink: string | undefined;
+  try {
+    const auth = getPublicAuth();
+    const config = await getConfig(auth);
 
-  if (googleAccount?.access_token) {
-    try {
-      const result = await createCalendarEvent(googleAccount.access_token, {
-        summary: `${eventType.title} with ${guestName}`,
-        description: notes ? `Notes: ${notes}` : undefined,
-        startTime,
-        endTime,
-        attendeeEmail: guestEmail,
-        timezone: timezone || eventType.user.availability?.timezone || "America/New_York",
-      });
-      meetLink = result.meetLink || undefined;
-    } catch (error) {
-      console.error("Error creating calendar event:", error);
+    const eventType = config.eventTypes.find(
+      (et) => et.id === eventTypeId || et.slug === eventTypeId
+    );
+
+    if (!eventType) {
+      return NextResponse.json({ error: "Event type not found" }, { status: 404 });
     }
-  }
 
-  const booking = await prisma.booking.create({
-    data: {
-      title: `${eventType.title} with ${guestName}`,
+    const tz = timezone || config.availability.timezone;
+
+    const result = await createBookingEvent(auth, {
+      summary: `${eventType.title} with ${guestName}`,
+      description: notes ? `Notes from ${guestName}: ${notes}` : `Meeting with ${guestName}`,
+      startTime,
+      endTime,
+      attendeeEmail: guestEmail,
+      timezone: tz,
       guestName,
       guestEmail,
       notes,
-      startTime: new Date(startTime),
-      endTime: new Date(endTime),
-      meetLink,
-      eventTypeId,
-      userId: eventType.userId,
-    },
-  });
+      eventTypeTitle: eventType.title,
+      eventTypeDuration: eventType.duration,
+      eventTypeColor: eventType.color,
+    });
 
-  return NextResponse.json({
-    booking,
-    meetLink,
-    message: "Booking confirmed!",
-  });
+    return NextResponse.json({
+      booking: {
+        id: result.eventId,
+        guestName,
+        guestEmail,
+        notes,
+        startTime,
+        endTime,
+        meetLink: result.meetLink,
+        status: "confirmed",
+      },
+      meetLink: result.meetLink,
+      message: "Booking confirmed!",
+    });
+  } catch (error) {
+    console.error("Error creating booking:", error);
+    return NextResponse.json({ error: "Failed to create booking" }, { status: 500 });
+  }
 }

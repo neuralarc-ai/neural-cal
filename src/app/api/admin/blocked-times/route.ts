@@ -1,25 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import {
+  getAdminAuth,
+  listBlockedTimes,
+  createBlockedTimeEvent,
+  deleteCalendarEvent,
+} from "@/lib/google";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  if (!session?.accessToken) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const blockedTimes = await prisma.blockedTime.findMany({
-    where: { userId: session.user.id },
-    orderBy: { startTime: "asc" },
-  });
+  const auth = getAdminAuth(session.accessToken, session.refreshToken);
+  const blockedTimes = await listBlockedTimes(auth);
 
   return NextResponse.json({ blockedTimes });
 }
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  if (!session?.accessToken) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -30,14 +33,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing start or end time" }, { status: 400 });
   }
 
-  const blocked = await prisma.blockedTime.create({
-    data: {
-      userId: session.user.id,
-      startTime: new Date(startTime),
-      endTime: new Date(endTime),
-      reason: reason || null,
-      allDay: allDay || false,
-    },
+  const auth = getAdminAuth(session.accessToken, session.refreshToken);
+  const blocked = await createBlockedTimeEvent(auth, {
+    startTime,
+    endTime,
+    reason,
+    allDay: allDay || false,
   });
 
   return NextResponse.json({ blocked });
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  if (!session?.accessToken) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -56,9 +57,8 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "Missing id" }, { status: 400 });
   }
 
-  await prisma.blockedTime.deleteMany({
-    where: { id, userId: session.user.id },
-  });
+  const auth = getAdminAuth(session.accessToken, session.refreshToken);
+  await deleteCalendarEvent(auth, id);
 
   return NextResponse.json({ success: true });
 }
