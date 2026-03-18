@@ -106,7 +106,7 @@ export async function getConfig(auth: ReturnType<typeof getPublicAuth>): Promise
     const calendar = google.calendar({ version: "v3", auth });
     const res = await calendar.events.list({
       calendarId: "primary",
-      privateExtendedProperty: "chronosConfig=true",
+      privateExtendedProperty: ["chronosConfig=true"],
       maxResults: 1,
       showDeleted: false,
     });
@@ -126,7 +126,7 @@ export async function saveConfig(
 
   const res = await calendar.events.list({
     calendarId: "primary",
-    privateExtendedProperty: "chronosConfig=true",
+    privateExtendedProperty: ["chronosConfig=true"],
     maxResults: 1,
   });
   const existing = res.data.items?.[0];
@@ -240,7 +240,7 @@ export async function listBookings(auth: ReturnType<typeof getPublicAuth>) {
 
   const res = await calendar.events.list({
     calendarId: "primary",
-    privateExtendedProperty: "chronosBooking=true",
+    privateExtendedProperty: ["chronosBooking=true"],
     orderBy: "startTime",
     singleEvents: true,
     // Include bookings from past year
@@ -320,7 +320,7 @@ export async function listBlockedTimes(auth: ReturnType<typeof getPublicAuth>) {
 
   const res = await calendar.events.list({
     calendarId: "primary",
-    privateExtendedProperty: "chronosBlocked=true",
+    privateExtendedProperty: ["chronosBlocked=true"],
     orderBy: "startTime",
     singleEvents: true,
     showDeleted: false,

@@ -46,9 +46,9 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, account, profile }) {
       // First sign-in — store tokens from Google
       if (account) {
-        token.id = profile?.sub;
-        token.accessToken = account.access_token;
-        token.refreshToken = account.refresh_token;
+        token.id = profile?.sub ?? "";
+        token.accessToken = account.access_token ?? "";
+        token.refreshToken = account.refresh_token ?? "";
         token.accessTokenExpires = account.expires_at
           ? account.expires_at * 1000
           : Date.now() + 3600 * 1000;
