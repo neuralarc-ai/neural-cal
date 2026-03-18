@@ -1,30 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { getPublicAuth, getConfig, getCEOProfile } from "@/lib/google";
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ userId: string }> }
 ) {
-  const { userId } = await params;
+  await params; // userId ignored — single CEO app
 
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    include: {
-      eventTypes: true,
-      availability: true,
-    },
-  });
-
-  if (!user) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  if (!process.env.CEO_GOOGLE_REFRESH_TOKEN) {
+    return NextResponse.json({ error: "Not configured" }, { status: 503 });
   }
 
-  return NextResponse.json({
-    id: user.id,
-    name: user.name,
-    image: user.image,
-    bio: user.bio,
-    eventTypes: user.eventTypes,
-    availability: user.availability,
-  });
+  try {
+    const auth = getPublicAuth();
+    const [profile, config] = await Promise.all([getCEOProfile(), getConfig(auth)]);
+
+    return NextResponse.json({
+      id: "primary",
+      name: profile.name,
+      image: profile.picture,
+      bio: config.bio,
+      eventTypes: config.eventTypes,
+      availability: config.availability,
+    });
+  } catch (error) {
+    console.error("Error fetching user:", error);
+    return NextResponse.json({ error: "Failed to load user info" }, { status: 500 });
+  }
 }
