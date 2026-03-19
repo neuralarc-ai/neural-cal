@@ -104,9 +104,12 @@ export default function PublicBookingPage() {
           {/* Sidebar */}
           <div className="lg:w-72 shrink-0">
             <div className="lg:sticky lg:top-24 space-y-5">
-              <div className="flex items-center gap-3">
-                {host.image && <img src={host.image} alt="" className="w-10 h-10 rounded-full grayscale" />}
-                <div><p className="font-medium text-sm">{host.name}</p><p className="text-xs text-muted">{host.bio}</p></div>
+              <div className="flex flex-col items-center text-center gap-3">
+                {host.image && <img src={host.image} alt="" className="w-20 h-20 rounded-full grayscale" />}
+                <div>
+                  <p className="font-semibold text-lg">{host.name}</p>
+                  <p className="text-sm text-muted mt-0.5">{host.bio}</p>
+                </div>
               </div>
               {selectedEvent && (
                 <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className="border border-white/15 rounded-xl p-4 space-y-2">

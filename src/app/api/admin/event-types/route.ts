@@ -1,28 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getPublicAuth, getAdminAuth, getConfig, saveConfig, EventType } from "@/lib/google";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { getAdminAuth, getConfig, saveConfig, EventType } from "@/lib/google";
 
-function getAuth(session: { accessToken: string; refreshToken: string }) {
+const DEV_BYPASS = process.env.NEXT_PUBLIC_DEV_ADMIN_BYPASS === "true";
+
+async function getAuth() {
+  if (DEV_BYPASS) return getPublicAuth();
+  const session = await getServerSession(authOptions);
+  if (!session?.accessToken) return null;
   return getAdminAuth(session.accessToken, session.refreshToken);
 }
 
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session?.accessToken) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await getAuth();
+  if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const auth = getAuth(session);
   const config = await getConfig(auth);
   return NextResponse.json({ eventTypes: config.eventTypes });
 }
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.accessToken) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await getAuth();
+  if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
   const { title, description, duration, slug } = body;
@@ -31,7 +31,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
 
-  const auth = getAuth(session);
   const config = await getConfig(auth);
 
   const newType: EventType = {
@@ -50,10 +49,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.accessToken) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await getAuth();
+  if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
   const { id, title, description, duration, slug } = body;
@@ -62,7 +59,6 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: "Missing id" }, { status: 400 });
   }
 
-  const auth = getAuth(session);
   const config = await getConfig(auth);
 
   const idx = config.eventTypes.findIndex((et) => et.id === id);
@@ -85,10 +81,8 @@ export async function PUT(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.accessToken) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await getAuth();
+  if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
@@ -97,7 +91,6 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "Missing id" }, { status: 400 });
   }
 
-  const auth = getAuth(session);
   const config = await getConfig(auth);
 
   config.eventTypes = config.eventTypes.filter((et) => et.id !== id);

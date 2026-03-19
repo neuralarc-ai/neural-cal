@@ -9,10 +9,13 @@ interface Booking { id: string; title: string; guestName: string; guestEmail: st
 interface EventType { id: string; slug: string; title: string; description: string; duration: number; }
 interface BlockedTime { id: string; startTime: string; endTime: string; reason: string | null; allDay: boolean; }
 interface Availability { startHour: number; endHour: number; days: string; timezone: string; }
+interface CalendarEvent { id: string; title: string; startTime: string; endTime: string; isAllDay: boolean; isChronosBooking: boolean; isChronosBlocked: boolean; }
 
 type Tab = "bookings" | "schedule" | "blocked" | "events";
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const TIMEZONES = ["America/New_York","America/Chicago","America/Denver","America/Los_Angeles","America/Toronto","Europe/London","Europe/Paris","Europe/Berlin","Asia/Tokyo","Asia/Shanghai","Asia/Kolkata","Asia/Dubai","Australia/Sydney","Pacific/Auckland"];
+
+const DEV_BYPASS = process.env.NEXT_PUBLIC_DEV_ADMIN_BYPASS === "true";
 
 export default function AdminPanel() {
   const { data: session, status } = useSession();
@@ -29,6 +32,8 @@ export default function AdminPanel() {
   // Block form
   const [blockDate, setBlockDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [viewDate, setViewDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [loadingCalEvents, setLoadingCalEvents] = useState(false);
 
   // Event form
   const [editingEvent, setEditingEvent] = useState<EventType | null>(null);
@@ -49,17 +54,31 @@ export default function AdminPanel() {
   }, []);
 
   useEffect(() => {
-    if (session?.user?.id && !setupDone) {
+    if (DEV_BYPASS && !setupDone) {
+      fetch("/api/setup", { method: "POST" }).then(() => { setSetupDone(true); fetchAll(); });
+    } else if (session?.user?.id && !setupDone) {
       fetch("/api/setup", { method: "POST" }).then(() => { setSetupDone(true); fetchAll(); });
     } else if (status === "unauthenticated") setLoading(false);
   }, [session, status, setupDone, fetchAll]);
 
+  useEffect(() => {
+    if (tab !== "blocked") return;
+    setLoadingCalEvents(true);
+    fetch(`/api/admin/calendar-events?date=${viewDate}`)
+      .then((r) => r.json())
+      .then((d) => setCalendarEvents(d.events || []))
+      .catch(() => {})
+      .finally(() => setLoadingCalEvents(false));
+  }, [viewDate, tab]);
+
   const saveAvailability = async () => { setSaving(true); await fetch("/api/admin/availability", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(availability) }); setSaving(false); };
 
   const blockHour = async (hour: number) => {
-    const startTime = `${viewDate}T${String(hour).padStart(2, "0")}:00:00`;
-    const endTime = `${viewDate}T${String(hour).padStart(2, "0")}:59:59`;
-    await fetch("/api/admin/blocked-times", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ startTime, endTime, reason: null, allDay: false }) });
+    // Convert local datetime → UTC ISO so Google Calendar stores the correct local hour
+    const startTime = new Date(`${viewDate}T${String(hour).padStart(2, "0")}:00:00`).toISOString();
+    const endTime = new Date(`${viewDate}T${String(hour).padStart(2, "0")}:59:59`).toISOString();
+    const res = await fetch("/api/admin/blocked-times", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ startTime, endTime, reason: null, allDay: false }) });
+    if (!res.ok) console.error("Block failed:", await res.text());
     const r = await fetch("/api/admin/blocked-times"); const d = await r.json(); setBlockedTimes(d.blockedTimes || []);
   };
 
@@ -73,7 +92,9 @@ export default function AdminPanel() {
   };
 
   const blockFullDay = async () => {
-    await fetch("/api/admin/blocked-times", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ startTime: `${viewDate}T00:00:00`, endTime: `${viewDate}T23:59:59`, reason: "Full day blocked", allDay: true }) });
+    const startTime = new Date(`${viewDate}T00:00:00`).toISOString();
+    const endTime = new Date(`${viewDate}T23:59:59`).toISOString();
+    await fetch("/api/admin/blocked-times", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ startTime, endTime, reason: "Full day blocked", allDay: true }) });
     const r = await fetch("/api/admin/blocked-times"); const d = await r.json(); setBlockedTimes(d.blockedTimes || []);
   };
 
@@ -114,9 +135,9 @@ export default function AdminPanel() {
     setAvailability({ ...availability, days: next.join(",") });
   };
 
-  if (status === "loading" || loading) return <div className="min-h-screen flex items-center justify-center"><div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" /></div>;
+  if ((DEV_BYPASS ? false : status === "loading") || loading) return <div className="min-h-screen flex items-center justify-center"><div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" /></div>;
 
-  if (!session) return (
+  if (!DEV_BYPASS && !session) return (
     <div className="min-h-screen flex items-center justify-center p-4">
       <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="border border-white/20 rounded-2xl p-10 max-w-sm w-full text-center bg-[#0a0a0a]">
         <p className="text-2xl font-bold mb-2 text-white">Admin</p>
@@ -144,8 +165,8 @@ export default function AdminPanel() {
           </div>
           <div className="flex items-center gap-3 sm:gap-4">
             <a href="/" target="_blank" className="text-xs text-muted hover:text-foreground transition-colors hidden sm:block">Public page ↗</a>
-            {session.user.image && <img src={session.user.image} alt="" className="w-7 h-7 rounded-full grayscale" />}
-            <button onClick={() => signOut()} className="text-xs text-muted hover:text-foreground cursor-pointer">Sign out</button>
+            {session?.user?.image && <img src={session.user.image} alt="" className="w-7 h-7 rounded-full grayscale" />}
+            {DEV_BYPASS ? <span className="text-[10px] border border-yellow-500/30 text-yellow-500/70 px-2 py-0.5 rounded-full">dev</span> : <button onClick={() => signOut()} className="text-xs text-muted hover:text-foreground cursor-pointer">Sign out</button>}
           </div>
         </div>
       </nav>
@@ -254,20 +275,29 @@ export default function AdminPanel() {
                   const booking = bookings.find((b) => {
                     const bs = new Date(b.startTime); return format(bs, "yyyy-MM-dd") === viewDate && bs.getHours() === h;
                   });
+                  // External calendar events (non-Chronos) occupying this hour
+                  const calEvent = calendarEvents.find((e) => {
+                    if (e.isChronosBooking || e.isChronosBlocked) return false;
+                    const s = new Date(e.startTime); const end = new Date(e.endTime);
+                    return s.getHours() <= h && (end.getHours() > h || (end.getHours() === h && end.getMinutes() > 0));
+                  });
+                  const isBusy = blocked || !!booking || !!calEvent;
                   return (
-                    <div key={h} className={`flex items-stretch border-b border-white/10 last:border-b-0 transition-colors ${blocked ? "bg-white/[0.03]" : ""}`}>
+                    <div key={h} className={`flex items-stretch border-b border-white/10 last:border-b-0 transition-colors ${isBusy ? "bg-white/3" : ""}`}>
                       <div className="w-20 sm:w-24 shrink-0 py-3 px-3 sm:px-4 text-xs text-muted border-r border-white/10 flex items-center">
                         {format(new Date(2000, 0, 1, h), "h:mm a")}
                       </div>
                       <div className="flex-1 py-3 px-3 sm:px-4 flex items-center gap-3 min-h-[48px]">
-                        {blocked && !booking && (
-                          <div className="flex items-center gap-2 flex-1">
-                            <span className="text-xs text-muted">Blocked</span>
-                            <div className="flex-1" />
-                            <button onClick={() => unblockHour(h)} className="text-[10px] text-muted hover:text-foreground border border-white/15 px-2 py-1 rounded cursor-pointer transition-colors">Unblock</button>
+                        {calEvent && (
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <div className="w-1.5 h-8 bg-blue-400/50 rounded-full shrink-0" />
+                            <div className="min-w-0">
+                              <p className="text-xs font-medium truncate">{calEvent.title}</p>
+                              <p className="text-[10px] text-muted">Google Calendar · auto-blocked</p>
+                            </div>
                           </div>
                         )}
-                        {booking && (
+                        {booking && !calEvent && (
                           <div className="flex items-center gap-2 flex-1 min-w-0">
                             <div className="w-1.5 h-8 bg-white/30 rounded-full shrink-0" />
                             <div className="min-w-0">
@@ -276,7 +306,14 @@ export default function AdminPanel() {
                             </div>
                           </div>
                         )}
-                        {!blocked && !booking && (
+                        {blocked && !booking && !calEvent && (
+                          <div className="flex items-center gap-2 flex-1">
+                            <span className="text-xs text-muted">Blocked</span>
+                            <div className="flex-1" />
+                            <button onClick={() => unblockHour(h)} className="text-[10px] text-muted hover:text-foreground border border-white/15 px-2 py-1 rounded cursor-pointer transition-colors">Unblock</button>
+                          </div>
+                        )}
+                        {!isBusy && (
                           <button onClick={() => blockHour(h)} className="text-[10px] text-muted hover:text-foreground opacity-0 hover:opacity-100 focus:opacity-100 transition-opacity cursor-pointer">
                             + Block
                           </button>

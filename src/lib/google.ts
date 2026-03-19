@@ -343,6 +343,37 @@ export async function listBlockedTimes(auth: ReturnType<typeof getPublicAuth>) {
   });
 }
 
+export async function listCalendarEventsForDay(
+  auth: ReturnType<typeof getPublicAuth>,
+  timeMin: string,
+  timeMax: string
+) {
+  const calendar = google.calendar({ version: "v3", auth });
+  const res = await calendar.events.list({
+    calendarId: "primary",
+    timeMin,
+    timeMax,
+    singleEvents: true,
+    orderBy: "startTime",
+    showDeleted: false,
+  });
+
+  return (res.data.items || [])
+    .filter((e) => e.summary !== "__CHRONOS_CONFIG__")
+    .map((e) => {
+      const props = e.extendedProperties?.private || {};
+      return {
+        id: e.id || "",
+        title: e.summary || "Busy",
+        startTime: e.start?.dateTime || (e.start?.date ? e.start.date + "T00:00:00" : ""),
+        endTime: e.end?.dateTime || (e.end?.date ? e.end.date + "T23:59:59" : ""),
+        isAllDay: !e.start?.dateTime,
+        isChronosBooking: props.chronosBooking === "true",
+        isChronosBlocked: props.chronosBlocked === "true",
+      };
+    });
+}
+
 export async function deleteCalendarEvent(
   auth: ReturnType<typeof getPublicAuth>,
   eventId: string
