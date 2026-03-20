@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getPublicAuth, getConfig, getFreeBusySlots } from "@/lib/google";
+import { getPublicAuth, getConfig, getFreeBusySlots, normalizeAvailability } from "@/lib/google";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -17,14 +17,15 @@ export async function GET(req: NextRequest) {
   try {
     const auth = getPublicAuth();
     const config = await getConfig(auth);
-    const availability = config.availability;
+    const { schedule, timezone } = normalizeAvailability(config.availability);
 
-    const allowedDays = availability.days.split(",").map(Number);
     const dateObj = new Date(date + "T00:00:00");
     const dayOfWeek = dateObj.getDay();
+    const daySchedule = schedule[dayOfWeek];
+    const allowedDays = schedule.map((d, i) => d.enabled ? i : -1).filter(i => i >= 0);
 
-    if (!allowedDays.includes(dayOfWeek)) {
-      return NextResponse.json({ slots: [], timezone: availability.timezone, availableDays: allowedDays });
+    if (!daySchedule.enabled) {
+      return NextResponse.json({ slots: [], timezone, availableDays: allowedDays });
     }
 
     const timeMin = new Date(date + "T00:00:00").toISOString();
@@ -40,42 +41,36 @@ export async function GET(req: NextRequest) {
 
     const slots: { start: string; end: string }[] = [];
 
-    for (let hour = availability.startHour; hour < availability.endHour; hour++) {
-      for (let minute = 0; minute < 60; minute += duration) {
+    for (const range of daySchedule.ranges) {
+      const [startH, startM] = range.start.split(":").map(Number);
+      const [endH, endM]     = range.end.split(":").map(Number);
+      const rangeEndMinutes  = endH * 60 + endM;
+
+      for (let min = startH * 60 + startM; min < rangeEndMinutes; min += duration) {
+        const slotH = Math.floor(min / 60);
+        const slotM = min % 60;
         const slotStart = new Date(
-          `${date}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00`
+          `${date}T${String(slotH).padStart(2, "0")}:${String(slotM).padStart(2, "0")}:00`
         );
         const slotEnd = new Date(slotStart.getTime() + duration * 60 * 1000);
 
-        // Skip if slot goes past end hour
-        if (
-          slotEnd.getHours() > availability.endHour ||
-          (slotEnd.getHours() === availability.endHour && slotEnd.getMinutes() > 0)
-        ) {
-          continue;
-        }
+        // Skip if slot goes past range end
+        if (slotEnd.getHours() * 60 + slotEnd.getMinutes() > rangeEndMinutes) continue;
 
         // Skip past slots
         if (slotStart <= new Date()) continue;
 
-        // Check Google Calendar conflicts (covers bookings + blocked times)
+        // Check Google Calendar conflicts
         const conflict = busySlots.some(
           (busy) => slotStart < new Date(busy.end) && slotEnd > new Date(busy.start)
         );
         if (conflict) continue;
 
-        slots.push({
-          start: slotStart.toISOString(),
-          end: slotEnd.toISOString(),
-        });
+        slots.push({ start: slotStart.toISOString(), end: slotEnd.toISOString() });
       }
     }
 
-    return NextResponse.json({
-      slots,
-      timezone: availability.timezone,
-      availableDays: allowedDays,
-    });
+    return NextResponse.json({ slots, timezone, availableDays: allowedDays });
   } catch (error) {
     console.error("Error getting availability:", error);
     return NextResponse.json({ error: "Failed to get availability" }, { status: 500 });

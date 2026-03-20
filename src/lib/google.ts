@@ -11,11 +11,38 @@ export interface EventType {
   color: string;
 }
 
+export interface TimeRange {
+  start: string; // "HH:MM"
+  end: string;   // "HH:MM"
+}
+
+export interface DaySchedule {
+  enabled: boolean;
+  ranges: TimeRange[];
+}
+
 export interface AvailabilityConfig {
-  startHour: number;
-  endHour: number;
-  days: string;
   timezone: string;
+  schedule: DaySchedule[]; // index 0=Sunday … 6=Saturday
+  // Legacy fields kept for backward-compat reads
+  startHour?: number;
+  endHour?: number;
+  days?: string;
+}
+
+/** Normalise either the new or legacy format into the canonical shape. */
+export function normalizeAvailability(avail: AvailabilityConfig): { schedule: DaySchedule[]; timezone: string } {
+  if (avail.schedule) return { schedule: avail.schedule, timezone: avail.timezone };
+  const enabledDays = (avail.days ?? "1,2,3,4,5").split(",").map(Number);
+  const start = `${String(avail.startHour ?? 9).padStart(2, "0")}:00`;
+  const end   = `${String(avail.endHour   ?? 17).padStart(2, "0")}:00`;
+  return {
+    timezone: avail.timezone ?? "America/New_York",
+    schedule: Array.from({ length: 7 }, (_, i) => ({
+      enabled: enabledDays.includes(i),
+      ranges: [{ start, end }],
+    })),
+  };
 }
 
 export interface ChronosConfig {
@@ -52,10 +79,11 @@ export const DEFAULT_CONFIG: ChronosConfig = {
     },
   ],
   availability: {
-    startHour: 9,
-    endHour: 17,
-    days: "1,2,3,4,5",
     timezone: "America/New_York",
+    schedule: Array.from({ length: 7 }, (_, i) => ({
+      enabled: [1, 2, 3, 4, 5].includes(i),
+      ranges: [{ start: "09:00", end: "17:00" }],
+    })),
   },
   bio: "Schedule a meeting with me",
 };
@@ -240,35 +268,58 @@ export async function listBookings(auth: ReturnType<typeof getPublicAuth>) {
 
   const res = await calendar.events.list({
     calendarId: "primary",
-    privateExtendedProperty: ["chronosBooking=true"],
     orderBy: "startTime",
     singleEvents: true,
-    // Include bookings from past year
-    timeMin: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString(),
+    timeMin: new Date().toISOString(),
     showDeleted: false,
   });
 
-  return (res.data.items || []).map((event) => {
-    const props = event.extendedProperties?.private || {};
-    return {
-      id: event.id,
-      title: event.summary,
-      guestName: props.guestName,
-      guestEmail: props.guestEmail,
-      notes: props.notes || null,
-      startTime: event.start?.dateTime || event.start?.date,
-      endTime: event.end?.dateTime || event.end?.date,
-      meetLink:
-        event.hangoutLink ||
-        (event.conferenceData?.entryPoints?.[0]?.uri ?? null),
-      status: event.status === "cancelled" ? "cancelled" : "confirmed",
-      eventType: {
-        title: props.eventTypeTitle || "Meeting",
-        duration: parseInt(props.eventTypeDuration || "30"),
-        color: props.eventTypeColor || "#6366f1",
-      },
-    };
-  });
+  return (res.data.items || [])
+    .filter((event) => {
+      const props = event.extendedProperties?.private || {};
+      // Skip internal Chronos config/blocked events
+      if (props.chronosConfig === "true") return false;
+      if (props.chronosBlocked === "true") return false;
+      // Skip all-day events with no time (holidays, OOO markers)
+      if (!event.start?.dateTime) return false;
+      return true;
+    })
+    .map((event) => {
+      const props = event.extendedProperties?.private || {};
+      const isChronos = props.chronosBooking === "true";
+
+      // For non-Chronos events, pick attendee info from the event's attendees list
+      const externalAttendee = (event.attendees || []).find(
+        (a) => !a.self && !a.organizer
+      );
+      const guestName  = props.guestName  || externalAttendee?.displayName  || externalAttendee?.email?.split("@")[0] || "External";
+      const guestEmail = props.guestEmail || externalAttendee?.email         || "";
+
+      const startTime = event.start?.dateTime!;
+      const endTime   = event.end?.dateTime!;
+      const durationMs = new Date(endTime).getTime() - new Date(startTime).getTime();
+      const durationMin = Math.round(durationMs / 60000);
+
+      return {
+        id: event.id,
+        title: event.summary || "Untitled",
+        guestName,
+        guestEmail,
+        notes: props.notes || event.description || null,
+        startTime,
+        endTime,
+        meetLink:
+          event.hangoutLink ||
+          (event.conferenceData?.entryPoints?.[0]?.uri ?? null),
+        status: event.status === "cancelled" ? "cancelled" : "confirmed",
+        isChronos,
+        eventType: {
+          title: isChronos ? (props.eventTypeTitle || "Meeting") : (event.summary || "Calendar Event"),
+          duration: isChronos ? parseInt(props.eventTypeDuration || "30") : durationMin,
+          color: props.eventTypeColor || (isChronos ? "#6366f1" : "#64748b"),
+        },
+      };
+    });
 }
 
 // ─── Blocked Times ────────────────────────────────────────────────────────────

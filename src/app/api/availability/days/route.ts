@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getPublicAuth, getConfig } from "@/lib/google";
+import { getPublicAuth, getConfig, normalizeAvailability } from "@/lib/google";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -16,9 +16,9 @@ export async function GET(req: NextRequest) {
   try {
     const auth = getPublicAuth();
     const config = await getConfig(auth);
-    const availability = config.availability;
+    const { schedule, timezone } = normalizeAvailability(config.availability);
 
-    const allowedDays = availability.days.split(",").map(Number);
+    const allowedDays = schedule.map((d, i) => d.enabled ? i : -1).filter(i => i >= 0);
     const [year, mon] = month.split("-").map(Number);
     const daysInMonth = new Date(year, mon, 0).getDate();
 
@@ -36,11 +36,7 @@ export async function GET(req: NextRequest) {
       availableDates.push(dateStr);
     }
 
-    return NextResponse.json({
-      availableDates,
-      allowedDays,
-      timezone: availability.timezone,
-    });
+    return NextResponse.json({ availableDates, allowedDays, timezone });
   } catch (error) {
     console.error("Error getting available days:", error);
     return NextResponse.json({ error: "Failed to get available days" }, { status: 500 });

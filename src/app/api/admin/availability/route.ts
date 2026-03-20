@@ -26,15 +26,11 @@ export async function PUT(req: NextRequest) {
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
-  const { startHour, endHour, days, timezone } = body;
-
   const config = await getConfig(auth);
 
   config.availability = {
-    startHour: startHour ?? config.availability.startHour,
-    endHour: endHour ?? config.availability.endHour,
-    days: days ?? config.availability.days,
-    timezone: timezone ?? config.availability.timezone,
+    timezone: body.timezone ?? config.availability.timezone,
+    schedule: body.schedule ?? config.availability.schedule,
   };
 
   await saveConfig(auth, config);

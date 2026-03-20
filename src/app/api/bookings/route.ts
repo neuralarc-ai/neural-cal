@@ -1,16 +1,22 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { getAdminAuth, listBookings } from "@/lib/google";
+import { getPublicAuth, getAdminAuth, listBookings } from "@/lib/google";
+
+const DEV_BYPASS = process.env.NEXT_PUBLIC_DEV_ADMIN_BYPASS === "true";
+
+async function getAuth() {
+  if (DEV_BYPASS) return getPublicAuth();
+  const session = await getServerSession(authOptions);
+  if (!session?.accessToken) return null;
+  return getAdminAuth(session.accessToken, session.refreshToken);
+}
 
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session?.accessToken) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await getAuth();
+  if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const auth = getAdminAuth(session.accessToken, session.refreshToken);
     const bookings = await listBookings(auth);
     return NextResponse.json({ bookings });
   } catch (error) {
