@@ -406,9 +406,9 @@ export default function PublicBookingPage() {
         <section className="w-full md:w-7/12 p-8 md:p-10" style={{ background: SURFACE }}>
 
           {/* Back button row */}
-          <div className="h-6 mb-7">
-            <AnimatePresence>
-              {step !== "type" && (
+          {step !== "type" && (
+            <div className="h-6 mb-7">
+              <AnimatePresence>
                 <motion.button key="back" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                   onClick={goBack}
                   className="flex items-center gap-1.5 text-xs font-semibold transition-colors cursor-pointer"
@@ -416,9 +416,9 @@ export default function PublicBookingPage() {
                   <IconBack color={ON_VAR} />
                   Back
                 </motion.button>
-              )}
-            </AnimatePresence>
-          </div>
+              </AnimatePresence>
+            </div>
+          )}
 
           <AnimatePresence mode="wait">
 
