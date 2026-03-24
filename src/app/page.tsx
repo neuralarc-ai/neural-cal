@@ -398,8 +398,6 @@ export default function PublicBookingPage() {
               </motion.div>
             )}
           </AnimatePresence>
-
-
         </section>
 
         {/* ────────────── RIGHT PANEL ────────────── */}
