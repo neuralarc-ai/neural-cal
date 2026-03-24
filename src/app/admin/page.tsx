@@ -237,10 +237,11 @@ export default function AdminPanel() {
   const upcomingBookings = bookings.filter((b) => isFuture(new Date(b.startTime)) || isToday(new Date(b.startTime)));
   const bookingLink      = typeof window !== "undefined" ? window.location.origin : "";
 
-  const timeOptions = Array.from({ length: 48 }, (_, i) => {
-    const h = Math.floor(i / 2); const m = i % 2 === 0 ? "00" : "30";
+  const timeOptions = Array.from({ length: 36 }, (_, i) => {
+    const idx = i + 12; // start from 6:00 AM (index 12 = 06:00)
+    const h = Math.floor(idx / 2); const m = idx % 2 === 0 ? "00" : "30";
     const val = `${String(h).padStart(2, "0")}:${m}`;
-    const label = format(new Date(2000, 0, 1, h, i % 2 === 0 ? 0 : 30), "h:mm a");
+    const label = format(new Date(2000, 0, 1, h, idx % 2 === 0 ? 0 : 30), "h:mm a");
     return { value: val, label };
   });
 
@@ -293,7 +294,17 @@ export default function AdminPanel() {
               <h4 className="text-[10px] font-bold tracking-widest uppercase mb-3" style={{ color: `${ON_VAR}99` }}>Current Timezone</h4>
               <div className="flex items-center gap-2">
                 <span style={{ color: ON_VAR }}><IcoGlobe /></span>
-                <span className="text-xs font-semibold" style={{ color: ON_SURF }}>{availability.timezone.replace(/_/g, " ")}</span>
+                <select value={availability.timezone}
+                  onChange={async (e) => {
+                    const updated = { ...availability, timezone: e.target.value };
+                    setAvailability(updated);
+                    await fetch("/api/admin/availability", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updated) });
+                    setSavedAvailability(updated);
+                  }}
+                  className="text-xs font-semibold outline-none cursor-pointer flex-1"
+                  style={{ background: "transparent", color: ON_SURF, colorScheme: "light" }}>
+                  {TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz.replace(/_/g, " ")}</option>)}
+                </select>
               </div>
             </div>
 
@@ -444,7 +455,7 @@ export default function AdminPanel() {
                                   style={{ background: SURFACE, border: `1px solid ${OUTLINE}`, color: ON_SURF, colorScheme: "light" }} />
                               </div>
                               <div className="flex items-end pb-1">
-                                <label className="flex items-center gap-2.5 cursor-pointer">
+                                <label className="flex items-center gap-2.5 cursor-pointer h-[42px]">
                                   <ToggleSwitch checked={overrideAllDay} onChange={() => setOverrideAllDay((v) => !v)} />
                                   <span className="text-sm font-semibold" style={{ color: ON_SURF }}>All day</span>
                                 </label>
@@ -811,7 +822,7 @@ export default function AdminPanel() {
       </AnimatePresence>
 
       {/* Powered by */}
-      <div className="fixed bottom-5 left-6 text-sm z-40" style={{ color: "rgba(45,52,54,0.45)" }}>
+      <div className="fixed bottom-0 left-0 right-0 text-center text-sm z-40 py-3" style={{ color: "rgba(45,52,54,0.45)", background: BG }}>
         Powered by <strong style={{ color: "rgba(45,52,54,0.7)" }}>NeuralArc Inc</strong>
       </div>
     </div>

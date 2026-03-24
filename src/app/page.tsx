@@ -339,7 +339,7 @@ export default function PublicBookingPage() {
       className="flex flex-col items-center justify-center p-4 md:p-8">
 
       {/* ── Brand above card ── */}
-      <p className="text-2xl font-bold tracking-tight mb-6" style={{ color: ON_SURF }}>Chronos</p>
+      <p className="text-2xl font-bold tracking-tight mb-6" style={{ color: ON_SURF }}>NeuralArc's Chronos</p>
 
       {/* ── Main card ── */}
       <div className="max-w-5xl w-full rounded-2xl flex flex-col md:flex-row overflow-hidden"
@@ -399,15 +399,7 @@ export default function PublicBookingPage() {
             )}
           </AnimatePresence>
 
-          {/* Bio / description */}
-          {host.bio && (
-            <div className="mt-auto">
-              <p className="text-sm leading-relaxed pl-4"
-                style={{ color: "rgba(75,85,99,0.85)", borderLeft: `4px solid ${TERTIARY}` }}>
-                {host.bio}
-              </p>
-            </div>
-          )}
+
         </section>
 
         {/* ────────────── RIGHT PANEL ────────────── */}
@@ -470,7 +462,7 @@ export default function PublicBookingPage() {
                         {format(selectedDate, "EEE, MMM d")}
                       </p>
 
-                      <div className="space-y-2 overflow-y-auto flex-1" style={{ maxHeight: 380 }}>
+                      <div className="space-y-2 overflow-y-auto flex-1 pr-2" style={{ maxHeight: 380 }}>
                         {loadingSlots
                           ? Array.from({ length: 6 }).map((_, i) => (
                               <div key={i} className="h-12 rounded-xl animate-pulse" style={{ background: OUTLINE }} />
@@ -544,7 +536,7 @@ export default function PublicBookingPage() {
       </div>
 
       {/* Powered by */}
-      <div className="fixed bottom-5 left-6 text-sm" style={{ color: "rgba(75,85,99,0.55)" }}>
+      <div className="fixed bottom-0 left-0 right-0 text-center text-sm py-3" style={{ color: "rgba(75,85,99,0.55)", background: BG }}>
         Powered by <strong style={{ color: "rgba(75,85,99,0.8)" }}>NeuralArc Inc</strong>
       </div>
     </div>
