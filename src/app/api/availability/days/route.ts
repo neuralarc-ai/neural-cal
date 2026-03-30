@@ -22,17 +22,24 @@ export async function GET(req: NextRequest) {
     const [year, mon] = month.split("-").map(Number);
     const daysInMonth = new Date(year, mon, 0).getDate();
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Get today's date in the configured timezone (not server TZ)
+    const nowInTZ = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    const todayStr = nowInTZ; // format: YYYY-MM-DD
+
+    const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 
     const availableDates: string[] = [];
 
     for (let d = 1; d <= daysInMonth; d++) {
-      const date = new Date(year, mon - 1, d);
-      if (date < today) continue;
-      if (!allowedDays.includes(date.getDay())) continue;
-
       const dateStr = `${year}-${String(mon).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      if (dateStr < todayStr) continue;
+
+      // Get the day-of-week in the configured timezone
+      const noonUTC = new Date(`${dateStr}T12:00:00Z`);
+      const dayParts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, weekday: "short" }).formatToParts(noonUTC);
+      const weekdayStr = dayParts.find(p => p.type === "weekday")!.value;
+      if (!allowedDays.includes(dayMap[weekdayStr])) continue;
+
       availableDates.push(dateStr);
     }
 

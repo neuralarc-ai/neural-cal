@@ -9,7 +9,7 @@ import {
 } from "date-fns";
 
 interface EventType { id: string; slug: string; title: string; description: string; duration: number; }
-interface Slot { start: string; end: string; }
+interface Slot { start: string; end: string; displayStart?: string; displayEnd?: string; }
 interface HostData { id: string; name: string; image: string; bio: string; eventTypes: EventType[]; }
 type Step = "type" | "date" | "form" | "confirmed";
 
@@ -265,7 +265,7 @@ export default function PublicBookingPage() {
                   <span className="block text-[0.68rem] uppercase tracking-widest font-bold mb-1" style={{ color: "rgba(75,85,99,0.7)" }}>When</span>
                   <h3 className="text-lg font-semibold">{selectedDate && format(selectedDate, "EEEE, MMMM d, yyyy")}</h3>
                   <p className="text-sm mt-0.5" style={{ color: "#4b5563" }}>
-                    {selectedSlot && `${format(new Date(selectedSlot.start), "h:mm a")} — ${format(new Date(selectedSlot.end), "h:mm a")}`}
+                    {selectedSlot && `${selectedSlot.displayStart || format(new Date(selectedSlot.start), "h:mm a")} — ${selectedSlot.displayEnd || format(new Date(selectedSlot.end), "h:mm a")}`}
                     {" "}({timezone.replace(/_/g, " ")})
                   </p>
                 </div>
@@ -393,7 +393,7 @@ export default function PublicBookingPage() {
                   {format(selectedDate, "EEEE, MMMM d, yyyy")}
                 </p>
                 <p className="text-sm mt-0.5" style={{ color: ON_VAR }}>
-                  {format(new Date(selectedSlot.start), "h:mm a")} – {format(new Date(selectedSlot.end), "h:mm a")}
+                  {selectedSlot.displayStart || format(new Date(selectedSlot.start), "h:mm a")} – {selectedSlot.displayEnd || format(new Date(selectedSlot.end), "h:mm a")}
                 </p>
               </motion.div>
             )}
@@ -576,7 +576,7 @@ function SlotButton({ s, selected, onClick }: { s: Slot; selected: boolean; onCl
         background: selected ? `${SURF_LOW}` : hovered ? SECONDARY_A09 : SURFACE,
         color: ON_SURF,
       }}>
-      {format(new Date(s.start), "h:mm a")}
+      {s.displayStart || format(new Date(s.start), "h:mm a")}
       {selected && (
         <span className="ml-2 text-[9px] px-1.5 py-0.5 rounded font-black uppercase"
           style={{ background: "#EFB3AF", color: ON_SURF }}>
