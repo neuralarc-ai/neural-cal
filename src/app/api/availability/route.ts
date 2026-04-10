@@ -63,6 +63,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const date = searchParams.get("date");
   const duration = parseInt(searchParams.get("duration") || "30");
+  const guestTimezone = searchParams.get("timezone"); // Guest's timezone for display
 
   if (!date) {
     return NextResponse.json({ error: "Missing date" }, { status: 400 });
@@ -75,12 +76,15 @@ export async function GET(req: NextRequest) {
   try {
     const auth = getPublicAuth();
     const config = await getConfig(auth);
-    const { schedule, timezone } = normalizeAvailability(config.availability);
+    const { schedule, timezone: hostTimezone } = normalizeAvailability(config.availability);
+    
+    // Use guest's timezone for display if provided, otherwise fall back to host's
+    const displayTimezone = guestTimezone || hostTimezone;
 
-    // Compute day-of-week in the configured timezone (not server TZ)
+    // Compute day-of-week in the HOST's configured timezone (not server TZ)
     const noonUTC = new Date(`${date}T12:00:00Z`);
     const dayParts = new Intl.DateTimeFormat("en-US", {
-      timeZone: timezone,
+      timeZone: hostTimezone,
       weekday: "short",
     }).formatToParts(noonUTC);
     const weekdayStr = dayParts.find(p => p.type === "weekday")!.value;
@@ -95,12 +99,12 @@ export async function GET(req: NextRequest) {
       .filter(i => i >= 0);
 
     if (!daySchedule?.enabled) {
-      return NextResponse.json({ slots: [], timezone, availableDays: allowedDays });
+      return NextResponse.json({ slots: [], timezone: displayTimezone, hostTimezone, availableDays: allowedDays });
     }
 
-    // Build timezone-aware day boundaries for FreeBusy query
-    const dayStartUTC = toUTC(date, 0, 0, timezone);
-    const dayEndUTC = toUTC(date, 23, 59, timezone);
+    // Build timezone-aware day boundaries for FreeBusy query (using HOST's timezone)
+    const dayStartUTC = toUTC(date, 0, 0, hostTimezone);
+    const dayEndUTC = toUTC(date, 23, 59, hostTimezone);
 
     let busySlots: { start: string; end: string }[] = [];
     try {
@@ -114,7 +118,7 @@ export async function GET(req: NextRequest) {
     }
 
     const timeFmt = new Intl.DateTimeFormat("en-US", {
-      timeZone: timezone,
+      timeZone: displayTimezone, // Format display times in GUEST's timezone
       hour: "numeric",
       minute: "2-digit",
       hour12: true,
@@ -136,7 +140,8 @@ export async function GET(req: NextRequest) {
         const slotH = Math.floor(min / 60);
         const slotM = min % 60;
 
-        const slotStart = toUTC(date, slotH, slotM, timezone);
+        // Calculate slot times using HOST's timezone (availability is defined in host's TZ)
+        const slotStart = toUTC(date, slotH, slotM, hostTimezone);
         const slotEnd = new Date(slotStart.getTime() + duration * 60 * 1000);
 
         // Skip past slots
@@ -158,7 +163,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ slots, timezone, availableDays: allowedDays });
+    return NextResponse.json({ slots, timezone: displayTimezone, hostTimezone, availableDays: allowedDays });
   } catch (error) {
     console.error("Error getting availability:", error);
     return NextResponse.json(
