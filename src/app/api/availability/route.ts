@@ -124,7 +124,19 @@ export async function GET(req: NextRequest) {
       hour12: true,
     });
 
-    const slots: { start: string; end: string; displayStart: string; displayEnd: string }[] = [];
+    const hostTimeFmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: hostTimezone, // Format display times in HOST's timezone
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+
+    const slots: {
+      start: string; end: string;
+      displayStart: string; displayEnd: string;
+      hostDisplayStart: string; hostDisplayEnd: string;
+      guestDate: string; isNight: boolean;
+    }[] = [];
     const now = new Date();
 
     for (const range of daySchedule.ranges) {
@@ -154,11 +166,26 @@ export async function GET(req: NextRequest) {
         );
         if (conflict) continue;
 
+        // Compute guest-perspective date and social-hour flag
+        const guestDate = new Intl.DateTimeFormat("en-CA", {
+          timeZone: displayTimezone,
+        }).format(slotStart);
+
+        const guestHour = parseInt(
+          new Intl.DateTimeFormat("en-US", { timeZone: displayTimezone, hour: "numeric", hour12: false })
+            .formatToParts(slotStart)
+            .find(p => p.type === "hour")?.value ?? "12"
+        ) % 24;
+
         slots.push({
           start: slotStart.toISOString(),
           end: slotEnd.toISOString(),
           displayStart: timeFmt.format(slotStart),
           displayEnd: timeFmt.format(slotEnd),
+          hostDisplayStart: hostTimeFmt.format(slotStart),
+          hostDisplayEnd: hostTimeFmt.format(slotEnd),
+          guestDate,
+          isNight: guestHour >= 21 || guestHour < 6,
         });
       }
     }

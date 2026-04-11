@@ -9,9 +9,51 @@ import {
 } from "date-fns";
 
 interface EventType { id: string; slug: string; title: string; description: string; duration: number; }
-interface Slot { start: string; end: string; displayStart?: string; displayEnd?: string; }
+interface Slot {
+  start: string; end: string;
+  displayStart?: string; displayEnd?: string;
+  hostDisplayStart?: string; hostDisplayEnd?: string;
+  guestDate?: string; isNight?: boolean;
+}
 interface HostData { id: string; name: string; image: string; bio: string; eventTypes: EventType[]; }
 type Step = "type" | "date" | "form" | "confirmed";
+
+/* ── Timezone helpers ─────────────────────────────────────────── */
+const COMMON_TIMEZONES = [
+  { value: "Pacific/Honolulu",    label: "Hawaii" },
+  { value: "America/Anchorage",   label: "Alaska" },
+  { value: "America/Los_Angeles", label: "Pacific Time" },
+  { value: "America/Denver",      label: "Mountain Time" },
+  { value: "America/Chicago",     label: "Central Time" },
+  { value: "America/New_York",    label: "Eastern Time" },
+  { value: "America/Toronto",     label: "Toronto" },
+  { value: "America/Sao_Paulo",   label: "São Paulo" },
+  { value: "Europe/London",       label: "London" },
+  { value: "Europe/Paris",        label: "Paris" },
+  { value: "Europe/Berlin",       label: "Berlin" },
+  { value: "Europe/Istanbul",     label: "Istanbul" },
+  { value: "Asia/Dubai",          label: "Dubai" },
+  { value: "Asia/Kolkata",        label: "India (IST)" },
+  { value: "Asia/Bangkok",        label: "Bangkok" },
+  { value: "Asia/Shanghai",       label: "China (CST)" },
+  { value: "Asia/Singapore",      label: "Singapore" },
+  { value: "Asia/Tokyo",          label: "Japan (JST)" },
+  { value: "Australia/Sydney",    label: "Sydney" },
+  { value: "Pacific/Auckland",    label: "Auckland" },
+];
+
+function tzShortName(tz: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "short" })
+      .formatToParts(new Date()).find(p => p.type === "timeZoneName")?.value ?? tz;
+  } catch { return tz; }
+}
+
+function tzLabel(tz: string): string {
+  const found = COMMON_TIMEZONES.find(t => t.value === tz);
+  const short = tzShortName(tz);
+  return found ? `${found.label} (${short})` : `${tz.replace(/_/g, " ")} (${short})`;
+}
 
 const fadeUp = {
   initial: { opacity: 0, y: 10 },
@@ -129,7 +171,8 @@ export default function PublicBookingPage() {
   const [guestEmail, setGuestEmail]       = useState("");
   const [notes, setNotes]                 = useState("");
   const [meetLink, setMeetLink]           = useState("");
-  const [timezone]                        = useState(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const [guestTimezone, setGuestTimezone] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const [hostTimezone, setHostTimezone]   = useState<string>("");
 
   useEffect(() => {
     fetch("/api/host")
@@ -152,12 +195,16 @@ export default function PublicBookingPage() {
   useEffect(() => {
     if (selectedDate && selectedEvent && host) {
       setLoadingSlots(true);
-      fetch(`/api/availability?userId=${host.id}&date=${format(selectedDate, "yyyy-MM-dd")}&duration=${selectedEvent.duration}&timezone=${timezone}`)
+      fetch(`/api/availability?userId=${host.id}&date=${format(selectedDate, "yyyy-MM-dd")}&duration=${selectedEvent.duration}&timezone=${guestTimezone}`)
         .then((r) => r.json())
-        .then((d) => { setSlots(d.slots || []); setLoadingSlots(false); })
+        .then((d) => {
+          setSlots(d.slots || []);
+          if (d.hostTimezone) setHostTimezone(d.hostTimezone);
+          setLoadingSlots(false);
+        })
         .catch(() => setLoadingSlots(false));
     }
-  }, [selectedDate, selectedEvent, host, timezone]);
+  }, [selectedDate, selectedEvent, host, guestTimezone]);
 
   const handleBook = async () => {
     if (!selectedSlot || !selectedEvent || !guestName || !guestEmail) return;
@@ -166,7 +213,7 @@ export default function PublicBookingPage() {
       const res = await fetch("/api/book", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ eventTypeId: selectedEvent.id, startTime: selectedSlot.start, endTime: selectedSlot.end, guestName, guestEmail, notes, timezone }),
+        body: JSON.stringify({ eventTypeId: selectedEvent.id, startTime: selectedSlot.start, endTime: selectedSlot.end, guestName, guestEmail, notes, timezone: guestTimezone }),
       });
       const data = await res.json();
       if (data.meetLink) setMeetLink(data.meetLink);
@@ -263,11 +310,20 @@ export default function PublicBookingPage() {
                 </div>
                 <div>
                   <span className="block text-[0.68rem] uppercase tracking-widest font-bold mb-1" style={{ color: "rgba(75,85,99,0.7)" }}>When</span>
-                  <h3 className="text-lg font-semibold">{selectedDate && format(selectedDate, "EEEE, MMMM d, yyyy")}</h3>
+                  <h3 className="text-lg font-semibold">
+                    {selectedSlot?.guestDate
+                      ? format(new Date(selectedSlot.guestDate + "T12:00:00"), "EEEE, MMMM d, yyyy")
+                      : selectedDate && format(selectedDate, "EEEE, MMMM d, yyyy")}
+                  </h3>
                   <p className="text-sm mt-0.5" style={{ color: "#4b5563" }}>
                     {selectedSlot && `${selectedSlot.displayStart || format(new Date(selectedSlot.start), "h:mm a")} — ${selectedSlot.displayEnd || format(new Date(selectedSlot.end), "h:mm a")}`}
-                    {" "}({timezone.replace(/_/g, " ")})
+                    {" "}({tzLabel(guestTimezone)})
                   </p>
+                  {hostTimezone && hostTimezone !== guestTimezone && selectedSlot?.hostDisplayStart && (
+                    <p className="text-xs mt-1" style={{ color: "rgba(75,85,99,0.55)" }}>
+                      {selectedSlot.hostDisplayStart} – {selectedSlot.hostDisplayEnd} for {host?.name}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -377,9 +433,23 @@ export default function PublicBookingPage() {
               <IconVideo color={SECONDARY} />
               <span className="text-sm font-semibold" style={{ color: ON_VAR }}>Web conferencing details upon confirmation</span>
             </div>
-            <div className="flex items-center gap-3">
-              <IconGlobe color={SECONDARY} />
-              <span className="text-sm font-semibold" style={{ color: ON_VAR }}>{timezone.replace(/_/g, " ")}</span>
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-3">
+                <IconGlobe color={SECONDARY} />
+                <select
+                  value={guestTimezone}
+                  onChange={(e) => { setGuestTimezone(e.target.value); setSelectedSlot(null); }}
+                  className="text-sm font-semibold outline-none cursor-pointer bg-transparent flex-1 min-w-0"
+                  style={{ color: ON_VAR }}>
+                  {!COMMON_TIMEZONES.find(t => t.value === guestTimezone) && (
+                    <option value={guestTimezone}>{guestTimezone.replace(/_/g, " ")} (detected)</option>
+                  )}
+                  {COMMON_TIMEZONES.map(tz => (
+                    <option key={tz.value} value={tz.value}>{tzLabel(tz.value)}</option>
+                  ))}
+                </select>
+              </div>
+              <p className="text-[11px] pl-9" style={{ color: "rgba(75,85,99,0.5)" }}>Select your time zone.</p>
             </div>
           </div>
 
@@ -390,11 +460,18 @@ export default function PublicBookingPage() {
                 className="px-4 py-3 rounded-xl"
                 style={{ borderLeft: `4px solid ${TERTIARY}`, background: `${TERTIARY}18` }}>
                 <p className="text-sm font-semibold" style={{ color: ON_SURF }}>
-                  {format(selectedDate, "EEEE, MMMM d, yyyy")}
+                  {selectedSlot.guestDate
+                    ? format(new Date(selectedSlot.guestDate + "T12:00:00"), "EEEE, MMMM d, yyyy")
+                    : format(selectedDate, "EEEE, MMMM d, yyyy")}
                 </p>
                 <p className="text-sm mt-0.5" style={{ color: ON_VAR }}>
                   {selectedSlot.displayStart || format(new Date(selectedSlot.start), "h:mm a")} – {selectedSlot.displayEnd || format(new Date(selectedSlot.end), "h:mm a")}
                 </p>
+                {hostTimezone && hostTimezone !== guestTimezone && selectedSlot.hostDisplayStart && (
+                  <p className="text-[10px] mt-0.5" style={{ color: "rgba(75,85,99,0.5)" }}>
+                    {selectedSlot.hostDisplayStart} – {selectedSlot.hostDisplayEnd} for {host?.name}
+                  </p>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
@@ -455,23 +532,48 @@ export default function PublicBookingPage() {
                     <p className="text-sm" style={{ color: ON_VAR }}>← Pick a date first</p>
                   ) : (
                     <>
-                      <p className="text-[10px] font-bold uppercase tracking-widest mb-4"
+                      <p className="text-[10px] font-bold uppercase tracking-widest mb-2"
                         style={{ color: "rgba(75,85,99,0.6)" }}>
                         {format(selectedDate, "EEE, MMM d")}
                       </p>
 
-                      <div className="space-y-2 overflow-y-auto flex-1 pr-2" style={{ maxHeight: 380 }}>
+                      <div className="overflow-y-auto flex-1 pr-2" style={{ maxHeight: 380 }}>
                         {loadingSlots
                           ? Array.from({ length: 6 }).map((_, i) => (
-                              <div key={i} className="h-12 rounded-xl animate-pulse" style={{ background: OUTLINE }} />
+                              <div key={i} className="h-14 rounded-xl animate-pulse mb-2" style={{ background: OUTLINE }} />
                             ))
                           : slots.length === 0
                           ? <p className="text-sm" style={{ color: ON_VAR }}>No slots available for this day.</p>
-                          : slots.map((s) => (
-                              <SlotButton key={s.start} s={s}
-                                selected={!!(selectedSlot && selectedSlot.start === s.start)}
-                                onClick={() => setSelectedSlot(s)} />
-                            ))
+                          : (() => {
+                              // Group slots by the guest's local date
+                              const groups = new Map<string, Slot[]>();
+                              for (const s of slots) {
+                                const key = s.guestDate ?? format(selectedDate, "yyyy-MM-dd");
+                                if (!groups.has(key)) groups.set(key, []);
+                                groups.get(key)!.push(s);
+                              }
+                              const showHeaders = groups.size > 1;
+                              return Array.from(groups.entries()).map(([dateStr, dateSlots]) => (
+                                <div key={dateStr}>
+                                  {showHeaders && (
+                                    <p className="text-[9px] font-bold uppercase tracking-widest mt-3 mb-1.5"
+                                      style={{ color: "rgba(75,85,99,0.45)" }}>
+                                      {format(new Date(dateStr + "T12:00:00"), "EEE, MMM d")}
+                                    </p>
+                                  )}
+                                  <div className="space-y-2">
+                                    {dateSlots.map((s) => (
+                                      <SlotButton key={s.start} s={s}
+                                        selected={!!(selectedSlot && selectedSlot.start === s.start)}
+                                        onClick={() => setSelectedSlot(s)}
+                                        showHostTime={!!hostTimezone && hostTimezone !== guestTimezone}
+                                        hostName={host.name}
+                                      />
+                                    ))}
+                                  </div>
+                                </div>
+                              ));
+                            })()
                         }
                       </div>
 
@@ -566,22 +668,32 @@ function TypeCard({ ev, delay, onClick }: { ev: EventType; delay: number; onClic
   );
 }
 
-function SlotButton({ s, selected, onClick }: { s: Slot; selected: boolean; onClick: () => void }) {
+function SlotButton({ s, selected, onClick, showHostTime, hostName }: {
+  s: Slot; selected: boolean; onClick: () => void; showHostTime?: boolean; hostName?: string;
+}) {
   const { hovered, bind } = useHover();
   return (
     <button onClick={onClick} {...bind}
-      className="w-full py-3.5 text-sm font-bold rounded-xl transition-all cursor-pointer text-center"
+      className="w-full py-2.5 px-3 text-sm font-bold rounded-xl transition-all cursor-pointer text-center"
       style={{
         border: selected ? `2px solid ${PRIMARY}` : `1px solid ${hovered ? SECONDARY : OUTLINE}`,
-        background: selected ? `${SURF_LOW}` : hovered ? SECONDARY_A09 : SURFACE,
+        background: selected ? SURF_LOW : hovered ? SECONDARY_A09 : SURFACE,
         color: ON_SURF,
       }}>
-      {s.displayStart || format(new Date(s.start), "h:mm a")}
-      {selected && (
-        <span className="ml-2 text-[9px] px-1.5 py-0.5 rounded font-black uppercase"
-          style={{ background: "#EFB3AF", color: ON_SURF }}>
-          ✓
-        </span>
+      {/* Guest time — primary */}
+      <div className="flex items-center justify-center gap-1">
+        {s.isNight && <span style={{ fontSize: 11, lineHeight: 1 }}>🌙</span>}
+        <span>{s.displayStart || format(new Date(s.start), "h:mm a")}</span>
+        {selected && (
+          <span className="ml-1 text-[9px] px-1.5 py-0.5 rounded font-black uppercase"
+            style={{ background: "#EFB3AF", color: ON_SURF }}>✓</span>
+        )}
+      </div>
+      {/* Host time — secondary hint */}
+      {showHostTime && s.hostDisplayStart && (
+        <div className="text-[9px] font-medium mt-0.5" style={{ color: "rgba(75,85,99,0.5)" }}>
+          {s.hostDisplayStart} for {hostName || "host"}
+        </div>
       )}
     </button>
   );
